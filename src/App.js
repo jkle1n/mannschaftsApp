@@ -1,50 +1,179 @@
-import React, { Component } from "react"
-import logo from "./logo.svg"
-import "./App.css"
+import React, { Component, useEffect, useState } from 'react';
+import logo from './logo.svg';
+import './App.css';
+import * as serviceWorkerRegistration from './serviceWorkerRegistration';
+import io from "socket.io-client";
 
-class LambdaDemo extends Component {
-  constructor(props) {
-    super(props)
-    this.state = { loading: false, msg: null }
+function App() {
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    const socket = io('http://192.168.23.41:5000');
+    console.log("socket on.....");
+    console.log(socket);
+
+    socket.on('connnection', () => {
+      console.log('App.js connected to server');
+    })
+
+    socket.on('order-added', (newOrders) => {
+      console.log("App.js setOrders(newOrders)");
+      console.log(newOrders);
+      notifyFunc(newOrders);
+    })
+
+    socket.on('message', (message) => {
+      console.log("App.js -------------------------------------- " + message);
+    })
+
+    socket.on('disconnect', () => {
+      console.log('App.js Socket disconnecting');
+    })
+
+  })
+  function notifyFunc(message) {
+    navigator.serviceWorker.ready.then(function (registration) {
+      console.log("............then...........");
+      console.log(registration);
+      console.log(Notification.permission);
+      registration.showNotification(message, {
+        body: `${new Date()} Buzz! Buzz!`,
+        vibrate: [200, 100, 200, 100, 200, 100, 200],
+        tag: 'vibration-sample' + new Date().toDateString(),
+      }).then(() => console.log("not send......"));
+    }).catch((e) => {
+      console.log("............catch...........");
+      console.log(e);
+    });
+  }
+  useEffect(() => {
+    /* click();
+    callBackendAPI()
+      .then(res => {
+        alert("Request received!");
+        setData(res.express);
+      })
+      .catch(err => console.log(err));
+*/
+    Notification.requestPermission();
+    serviceWorkerRegistration.register({ onSuccess: success });
+    console.log(".-..-.-.-.-.-..-");
+    console.log(navigator.serviceWorker);
+    /* setInterval(() => {
+      navigator.serviceWorker.ready.then(function (registration) {
+        console.log("............then...........");
+        console.log(registration);
+        console.log(Notification.permission);
+        registration.showNotification('Hellp', {
+          body: `${new Date()} Buzz! Buzz!`,
+          vibrate: [200, 100, 200, 100, 200, 100, 200],
+          tag: 'vibration-sample'
+        });
+      }).catch((e) => {
+        console.log("............catch...........");
+        console.log(e);
+      });
+    }, 5000); */
+  })
+  function urlBase64ToUint8Array(base64String) {
+    var padding = '='.repeat((4 - base64String.length % 4) % 4);
+    var base64 = (base64String + padding)
+      .replace(/\-/g, '+')
+      .replace(/_/g, '/');
+
+    var rawData = window.atob(base64);
+    var outputArray = new Uint8Array(rawData.length);
+
+    for (var i = 0; i < rawData.length; ++i) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
   }
 
-  handleClick = api => e => {
-    e.preventDefault()
+  function click() {
+    navigator.serviceWorker.ready
+      .then(function (registration) {
+        // Use the PushManager to get the user's subscription to the push service.
+        return registration.pushManager.getSubscription()
+          .then(async function (subscription) {
+            // If a subscription was found, return it.
+            if (subscription) {
+              return subscription;
+            }
 
-    this.setState({ loading: true })
-    fetch("/.netlify/functions/" + api)
-      .then(response => response.json())
-      .then(json => this.setState({ loading: false, msg: json.msg }))
+            // Get the server's public key
+            const response = await fetch('./vapidPublicKey');
+            const vapidPublicKey = await response.text();
+            // Chrome doesn't accept the base64-encoded (string) vapidPublicKey yet
+            // urlBase64ToUint8Array() is defined in /tools.js
+            const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
+
+            // Otherwise, subscribe the user (userVisibleOnly allows to specify that we don't plan to
+            // send notifications that don't have a visible effect for the user).
+            return registration.pushManager.subscribe({
+              userVisibleOnly: true,
+              applicationServerKey: convertedVapidKey
+            });
+          });
+      }).then(function (subscription) {
+        // Send the subscription details to the server using the Fetch API.
+        fetch('./register', {
+          method: 'post',
+          headers: {
+            'Content-type': 'application/json'
+          },
+          body: JSON.stringify({
+            subscription: subscription
+          }),
+        });
+
+        const payload = "Hey";
+        const delay = 500;
+        const ttl = 12;
+
+        // Ask the server to send the client a notification (for testing purposes, in actual
+        // applications the push notification is likely going to be generated by some event
+        // in the server).
+        fetch('./sendNotification', {
+          method: 'post',
+          headers: {
+            'Content-type': 'application/json'
+          },
+          body: JSON.stringify({
+            subscription: subscription,
+            payload: payload,
+            delay: delay,
+            ttl: ttl,
+          }),
+        });
+
+      });
+  }
+  function success() {
+    console.log("Successfully registered.....");
   }
 
-  render() {
-    const { loading, msg } = this.state
+  // fetching the GET route from the Express server which matches the GET route from server.js
+  async function callBackendAPI() {
+    const response = await fetch('/express_backend');
+    const body = await response.json();
 
-    return (
-      <p>
-        <button onClick={this.handleClick("hello")}>{loading ? "Loading..." : "Call Lambda"}</button>
-        <button onClick={this.handleClick("async-dadjoke")}>{loading ? "Loading..." : "Call Async Lambda"}</button>
-        <br />
-        <span>{msg}</span>
-      </p>
-    )
-  }
+    if (response.status !== 200) {
+      throw Error(body.message)
+    }
+    return body;
+  };
+
+  return (
+    <div className="App">
+      <header className="App-header">
+        <img src={logo} className="App-logo" alt="logo" />
+        <h1 className="App-title">Welcome to React</h1>
+      </header>
+      <p className="App-intro">{data}</p>
+    </div>
+  );
+
 }
 
-class App extends Component {
-  render() {
-    return (
-      <div className="App">
-        <header className="App-header">
-          <img src={logo} className="App-logo" alt="logo" />
-          <p>
-            Edit <code>src/App.js</code> and save to reload.
-          </p>
-          <LambdaDemo />
-        </header>
-      </div>
-    )
-  }
-}
-
-export default App
+export default App;
