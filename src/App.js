@@ -16,6 +16,10 @@ function App() {
       console.log('App.js connected to server');
     })
 
+    socket.on("connect_error", (err) => {
+      console.log(`connect_error due to ${err.message}`);
+    });
+
     socket.on('order-added', (newOrders) => {
       console.log("App.js setOrders(newOrders)");
       console.log(newOrders);
